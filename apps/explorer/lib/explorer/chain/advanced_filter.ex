@@ -816,7 +816,7 @@ defmodule Explorer.Chain.AdvancedFilter do
     query |> where(not is_nil(as(:transaction).block_number) and not is_nil(as(:transaction).index))
   end
 
-  defp filter_transaction_by_types(query, nil), do: query
+  defp filter_transaction_by_types(query, types) when types in [nil, []], do: query
 
   defp filter_transaction_by_types(query, types) do
     if Enum.all?(@transaction_types, &Enum.member?(types, &1)) do
