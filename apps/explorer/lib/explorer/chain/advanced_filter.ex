@@ -1011,7 +1011,13 @@ defmodule Explorer.Chain.AdvancedFilter do
     end
   end
 
-  defp do_filter_token_transfers_by_both_addresses(query_function, {:include, from}, {:include, to}, relation) do
+  defp do_filter_token_transfers_by_both_addresses(query_function, {:include, from}, {:include, to}, :and) do
+    fn query, unnested? ->
+      query |> where([t], t.from_address_hash in ^from and t.to_address_hash in ^to) |> query_function.(unnested?)
+    end
+  end
+
+  defp do_filter_token_transfers_by_both_addresses(query_function, {:include, from}, {:include, to}, _relation) do
     fn query, _unnested? ->
       from_queries =
         from
@@ -1025,7 +1031,16 @@ defmodule Explorer.Chain.AdvancedFilter do
           query |> where([token_transfer], token_transfer.to_address_hash == ^to_address) |> query_function.(true)
         end)
 
-      do_filter_token_transfers_by_both_addresses_to_include(from_queries, to_queries, relation)
+      union_query =
+        from_queries
+        |> Kernel.++(to_queries)
+        |> map_first(&subquery/1)
+        |> Enum.reduce(fn query, acc -> union(acc, ^query) end)
+
+      from(token_transfer in subquery(union_query),
+        as: :unnested_token_transfer,
+        order_by: [desc: token_transfer.block_number, desc: token_transfer.log_index]
+      )
     end
   end
 
@@ -1133,34 +1148,6 @@ defmodule Explorer.Chain.AdvancedFilter do
     end
   end
 
-  defp do_filter_token_transfers_by_both_addresses_to_include(from_queries, to_queries, relation) do
-    case relation do
-      :and ->
-        united_from_queries =
-          from_queries |> map_first(&subquery/1) |> Enum.reduce(fn query, acc -> union_all(acc, ^query) end)
-
-        united_to_queries =
-          to_queries |> map_first(&subquery/1) |> Enum.reduce(fn query, acc -> union_all(acc, ^query) end)
-
-        from(token_transfer in subquery(intersect_all(united_from_queries, ^united_to_queries)),
-          as: :unnested_token_transfer,
-          order_by: [desc: token_transfer.block_number, desc: token_transfer.log_index]
-        )
-
-      _ ->
-        union_query =
-          from_queries
-          |> Kernel.++(to_queries)
-          |> map_first(&subquery/1)
-          |> Enum.reduce(fn query, acc -> union(acc, ^query) end)
-
-        from(token_transfer in subquery(union_query),
-          as: :unnested_token_transfer,
-          order_by: [desc: token_transfer.block_number, desc: token_transfer.log_index]
-        )
-    end
-  end
-
   defp filter_transactions_by_addresses(query, from_addresses, to_addresses, relation, order_by) do
     order_by = fn query -> query |> exclude(:order_by) |> order_by.() end
 
@@ -1193,7 +1180,13 @@ defmodule Explorer.Chain.AdvancedFilter do
     |> order_by.()
   end
 
-  defp do_filter_transactions_by_both_addresses(query, {:include, from}, {:include, to}, relation, order_by) do
+  defp do_filter_transactions_by_both_addresses(query, {:include, from}, {:include, to}, :and, order_by) do
+    query
+    |> where([transaction], transaction.from_address_hash in ^from and transaction.to_address_hash in ^to)
+    |> order_by.()
+  end
+
+  defp do_filter_transactions_by_both_addresses(query, {:include, from}, {:include, to}, _relation, order_by) do
     from_queries =
       from
       |> Enum.map(fn from_address ->
@@ -1210,7 +1203,14 @@ defmodule Explorer.Chain.AdvancedFilter do
         |> order_by.()
       end)
 
-    do_filter_transactions_by_both_addresses_to_include(from_queries, to_queries, relation, order_by)
+    union_query =
+      from_queries
+      |> Kernel.++(to_queries)
+      |> map_first(&subquery/1)
+      |> Enum.reduce(fn query, acc -> union(acc, ^query) end)
+
+    filtered_query = from(transaction in subquery(union_query))
+    filtered_query |> order_by.()
   end
 
   defp do_filter_transactions_by_both_addresses(query, {:include, from}, {:exclude, to}, :and, order_by) do
@@ -1301,32 +1301,6 @@ defmodule Explorer.Chain.AdvancedFilter do
       transaction.from_address_hash not in ^from or transaction.to_address_hash not in ^to
     )
     |> order_by.()
-  end
-
-  defp do_filter_transactions_by_both_addresses_to_include(from_queries, to_queries, relation, order_by) do
-    case relation do
-      :and ->
-        united_from_queries =
-          from_queries |> map_first(&subquery/1) |> Enum.reduce(fn query, acc -> union_all(acc, ^query) end)
-
-        united_to_queries =
-          to_queries |> map_first(&subquery/1) |> Enum.reduce(fn query, acc -> union_all(acc, ^query) end)
-
-        filtered_query = from(transaction in subquery(intersect_all(united_from_queries, ^united_to_queries)))
-
-        filtered_query
-        |> order_by.()
-
-      _ ->
-        union_query =
-          from_queries
-          |> Kernel.++(to_queries)
-          |> map_first(&subquery/1)
-          |> Enum.reduce(fn query, acc -> union(acc, ^query) end)
-
-        filtered_query = from(transaction in subquery(union_query))
-        filtered_query |> order_by.()
-    end
   end
 
   @eth_decimals 1_000_000_000_000_000_000

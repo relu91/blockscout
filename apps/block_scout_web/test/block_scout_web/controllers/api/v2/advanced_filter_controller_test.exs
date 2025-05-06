@@ -862,6 +862,94 @@ defmodule BlockScoutWeb.API.V2.AdvancedFilterControllerTest do
       assert Enum.count(response["items"]) == 6
     end
 
+    test "filter by from and to address (intersect corner case)", %{conn: conn} do
+      from_address = insert(:address)
+      to_address = insert(:address)
+
+      transaction =
+        :transaction
+        |> insert(
+          from_address: from_address,
+          from_address_hash: from_address.hash,
+          to_address: to_address,
+          to_address_hash: to_address.hash
+        )
+        |> with_block()
+
+      insert(:internal_transaction,
+        transaction: transaction,
+        block_hash: transaction.block_hash,
+        index: 51,
+        block_index: 51,
+        from_address: from_address,
+        from_address_hash: from_address.hash,
+        to_address: to_address,
+        to_address_hash: to_address.hash
+      )
+
+      insert(:token_transfer,
+        transaction: transaction,
+        block_number: transaction.block_number,
+        log_index: 51,
+        from_address: from_address,
+        from_address_hash: from_address.hash,
+        to_address: to_address,
+        to_address_hash: to_address.hash
+      )
+
+      for i <- 0..50 do
+        transaction =
+          :transaction |> insert(from_address: from_address, from_address_hash: from_address.hash) |> with_block()
+
+        insert(:internal_transaction,
+          transaction: transaction,
+          block_hash: transaction.block_hash,
+          index: i + 1,
+          block_index: i + 1,
+          from_address: from_address,
+          from_address_hash: from_address.hash
+        )
+
+        insert(:token_transfer,
+          transaction: transaction,
+          block_number: transaction.block_number,
+          log_index: i,
+          from_address: from_address,
+          from_address_hash: from_address.hash
+        )
+
+        transaction = :transaction |> insert(to_address: to_address, to_address_hash: to_address.hash) |> with_block()
+
+        insert(:internal_transaction,
+          transaction: transaction,
+          block_hash: transaction.block_hash,
+          index: i + 1,
+          block_index: i + 1,
+          to_address: to_address,
+          to_address_hash: to_address.hash
+        )
+
+        insert(:token_transfer,
+          transaction: transaction,
+          block_number: transaction.block_number,
+          log_index: i,
+          to_address: to_address,
+          to_address_hash: to_address.hash
+        )
+      end
+
+      request =
+        get(conn, "/api/v2/advanced-filters", %{
+          "from_address_hashes_to_include" => to_string(from_address.hash),
+          "to_address_hashes_to_include" => to_string(to_address.hash),
+          "address_relation" => "AnD"
+        })
+
+      assert response = json_response(request, 200)
+
+      assert Enum.count(response["items"]) == 3
+    end
+
     test "filter by from or to address", %{conn: conn} do
       from_address = insert(:address)
       to_address = insert(:address)
