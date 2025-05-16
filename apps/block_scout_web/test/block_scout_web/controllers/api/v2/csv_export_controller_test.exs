@@ -489,7 +489,6 @@ defmodule BlockScoutWeb.Api.V2.CsvExportControllerTest do
   defp csv_setup() do
     old_recaptcha_env = Application.get_env(:block_scout_web, :recaptcha)
     old_http_adapter = Application.get_env(:block_scout_web, :http_adapter)
-    original_rate_limit_config = :persistent_term.get(:rate_limit_config)
     original_api_rate_limit = Application.get_env(:block_scout_web, :api_rate_limit)
 
     v2_secret_key = "v2_secret_key"
@@ -508,7 +507,6 @@ defmodule BlockScoutWeb.Api.V2.CsvExportControllerTest do
     on_exit(fn ->
       Application.put_env(:block_scout_web, :recaptcha, old_recaptcha_env)
       Application.put_env(:block_scout_web, :http_adapter, old_http_adapter)
-      :persistent_term.put(:rate_limit_config, original_rate_limit_config)
       :ets.delete_all_objects(BlockScoutWeb.RateLimit.Hammer.ETS)
       Application.put_env(:block_scout_web, :api_rate_limit, original_api_rate_limit)
     end)
