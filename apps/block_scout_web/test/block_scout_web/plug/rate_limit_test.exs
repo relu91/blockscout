@@ -286,5 +286,121 @@ defmodule BlockScoutWeb.Plug.RateLimitTest do
       assert get_resp_header(second_request, "x-ratelimit-remaining") == ["0"]
       assert get_resp_header(second_request, "x-ratelimit-reset") |> hd() |> String.to_integer() > 0
     end
+
+    test "rate limit is disabled when configured", %{conn: conn} do
+      config = %{
+        static_match: %{
+          "default" => %{
+            ip: %{
+              period: 60_000,
+              limit: 0
+            }
+          }
+        },
+        wildcard_match: %{},
+        parametrized_match: %{}
+      }
+
+      :persistent_term.put(:rate_limit_config, config)
+
+      Application.put_env(
+        :block_scout_web,
+        :api_rate_limit,
+        Keyword.put(Application.get_env(:block_scout_web, :api_rate_limit), :disabled, true)
+      )
+
+      request = conn |> get("/api/v2/transactions")
+      assert request.status == 200
+      assert get_resp_header(request, "x-ratelimit-limit") == ["-1"]
+      assert get_resp_header(request, "x-ratelimit-remaining") == ["-1"]
+      assert get_resp_header(request, "x-ratelimit-reset") == ["-1"]
+    end
+
+    test "bypasses rate limit with valid API key", %{conn: conn} do
+      config = %{
+        static_match: %{
+          "default" => %{
+            ip: %{
+              period: 60_000,
+              limit: 0
+            }
+          }
+        },
+        wildcard_match: %{},
+        parametrized_match: %{}
+      }
+
+      :persistent_term.put(:rate_limit_config, config)
+
+      Application.put_env(
+        :block_scout_web,
+        :api_rate_limit,
+        Keyword.put(Application.get_env(:block_scout_web, :api_rate_limit), :no_rate_limit_api_key_value, "123")
+      )
+
+      request = conn |> get("/api/v2/transactions", %{"apikey" => "123"})
+      assert request.status == 200
+      assert get_resp_header(request, "x-ratelimit-limit") == ["-1"]
+      assert get_resp_header(request, "x-ratelimit-remaining") == ["-1"]
+      assert get_resp_header(request, "x-ratelimit-reset") == ["-1"]
+    end
+
+    test "enforces rate limit with invalid API key", %{conn: conn} do
+      config = %{
+        static_match: %{
+          "default" => %{
+            ip: %{
+              period: 60_000,
+              limit: 0
+            }
+          }
+        },
+        wildcard_match: %{},
+        parametrized_match: %{}
+      }
+
+      :persistent_term.put(:rate_limit_config, config)
+
+      Application.put_env(
+        :block_scout_web,
+        :api_rate_limit,
+        Keyword.put(Application.get_env(:block_scout_web, :api_rate_limit), :no_rate_limit_api_key_value, nil)
+      )
+
+      request = conn |> get("/api/v2/transactions", %{"apikey" => nil})
+      assert request.status == 429
+      assert get_resp_header(request, "x-ratelimit-limit") == ["0"]
+      assert get_resp_header(request, "x-ratelimit-remaining") == ["0"]
+      assert get_resp_header(request, "x-ratelimit-reset") |> hd() |> String.to_integer() > 0
+    end
+
+    test "enforces rate limit with empty API key", %{conn: conn} do
+      config = %{
+        static_match: %{
+          "default" => %{
+            ip: %{
+              period: 60_000,
+              limit: 0
+            }
+          }
+        },
+        wildcard_match: %{},
+        parametrized_match: %{}
+      }
+
+      :persistent_term.put(:rate_limit_config, config)
+
+      Application.put_env(
+        :block_scout_web,
+        :api_rate_limit,
+        Keyword.put(Application.get_env(:block_scout_web, :api_rate_limit), :no_rate_limit_api_key_value, "")
+      )
+
+      request = conn |> get("/api/v2/transactions", %{"apikey" => "     "})
+      assert request.status == 429
+      assert get_resp_header(request, "x-ratelimit-limit") == ["0"]
+      assert get_resp_header(request, "x-ratelimit-remaining") == ["0"]
+      assert get_resp_header(request, "x-ratelimit-reset") |> hd() |> String.to_integer() > 0
+    end
   end
 end
